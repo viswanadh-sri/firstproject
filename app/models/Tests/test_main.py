@@ -1,3 +1,14 @@
+import os
+from dotenv import load_dotenv
+load_dotenv()
+mongo_uri = os.getenv("MONGO_URI", "mongodb+srv://<viswanadhkurre23083_db_user>:4dFy2Cvj0qGXzXdy@clusterv.lotgxig.mongodb.net")
+client = MongoClient(uri, server_api=ServerApi('1'))
+# Send a ping to confirm a successful connection
+try:
+    client.admin.command('ping')
+    print("Pinged your deployment. You successfully connected to MongoDB!")
+except Exception as e:
+    print(e)
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock

@@ -15,3 +15,5 @@
 - Set `COOKIE_SECURE=true` behind HTTPS in production.
 - Pydantic models reject unsupported display-name characters, control characters, and oversized input. Jinja2 autoescaping is enabled for the HTML template.
 - The forgot-password endpoint intentionally returns the same response whether an email exists to reduce account enumeration. Connect the generated token to an email provider before production use; do not expose reset tokens in the API response.
+- VirusTotal integration is available at `/virustotal/urls`, `/virustotal/urls/{url_id}/report`, and `/virustotal/files`. Set `VIRUSTOTAL_API_KEY` in `.env`; it is never returned by the API.
+- Files up to 32 MB use VirusTotal's direct upload endpoint. Larger files use the temporary upload URL returned by VirusTotal, up to the service's 650 MB limit.

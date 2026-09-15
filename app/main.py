@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 from app.core.config import settings
 from app.db.mongodb import close_mongo, connect_to_mongo
 from app.routers import auth
+from app.routers import virustotal
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
@@ -21,6 +22,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.include_router(auth.router)
+app.include_router(virustotal.router)
 
 
 @app.get("/", tags=["root"])

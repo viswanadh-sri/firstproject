@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     cookie_domain: str | None = None
     allowed_origins: str = "http://localhost:8000"
+    virustotal_api_key: SecretStr | None = None
+    virustotal_base_url: str = "https://www.virustotal.com/api/v3"
+    virustotal_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
 
     model_config = SettingsConfigDict(
         env_file=".env",
