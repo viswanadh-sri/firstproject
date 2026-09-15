@@ -3,7 +3,7 @@ from pymongo.server_api import ServerApi
 import os
 from dotenv import load_dotenv
 load_dotenv()
-mongo_uri = os.getenv("MONGO_URI", "mongodb+srv://<viswanadhkurre23083_db_user>:4dFy2Cvj0qGXzXdy@clusterv.lotgxig.mongodb.net")
+mongo_uri = os.getenv("MONGODB_URI")
 client = MongoClient(mongo_uri, server_api=ServerApi('1'))
 # Send a ping to confirm a successful connection
 try:
