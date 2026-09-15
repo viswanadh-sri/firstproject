@@ -116,7 +116,7 @@ async def reset_password(payload: ResetPasswordRequest):
 
 @router.post("/logout")
 async def logout(request: Request, response: Response):
-    require_csrf(request)
+    #require_csrf(request)
     response.delete_cookie("access_token", path="/", domain=settings.cookie_domain)
     response.delete_cookie("csrf_token", path="/", domain=settings.cookie_domain)
     return {"message": "Logged out"}

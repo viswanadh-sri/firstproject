@@ -1,3 +1,4 @@
+from app.routers.virustotal import router as virustotal_router
 from contextlib import asynccontextmanager
 from pathlib import Path
 

@@ -1,3 +1,5 @@
+from fastapi import APIRouter, File, HTTPException, UploadFile, status
+import requests
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
@@ -7,7 +9,9 @@ from app.services.virustotal import VirusTotalError, VirusTotalService, file_siz
 
 router = APIRouter(prefix="/virustotal", tags=["VirusTotal"])
 service = VirusTotalService()
-
+@router.post("/urls", status_code=status.HTTP_200_OK)
+async def scan_url(payload: URLScanRequest):
+    return await _call(lambda: service.scan_url(str(payload.url)))
 
 class URLScanRequest(BaseModel):
     url: AnyHttpUrl
