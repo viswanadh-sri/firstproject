@@ -25,10 +25,24 @@ class VirusTotalService:
         timeout: float | None = None,
     ):
         configured_key = settings.virustotal_api_key
-        raw_key = api_key or (configured_key.get_secret_value() if configured_key else None)
+        if api_key is not None:
+            raw_key = api_key
+        elif configured_key is None:
+            raw_key = None
+        else:
+            get_secret_value = getattr(configured_key, "get_secret_value", None)
+            raw_key = (
+                get_secret_value()
+                if callable(get_secret_value)
+                else configured_key
+            )
         self.api_key = raw_key.strip() if raw_key else None
         self.base_url = (base_url or settings.virustotal_base_url).rstrip("/")
         self.timeout = timeout or settings.virustotal_timeout_seconds
+        self._client = httpx.AsyncClient(timeout=self.timeout)
+
+    async def close(self) -> None:
+        await self._client.aclose()
 
     def _headers(self) -> dict[str, str]:
         if not self.api_key:
@@ -84,13 +98,12 @@ class VirusTotalService:
         for attempt in range(attempts + 1):
             try:
                 self._rewind_file_upload(kwargs.get("files"))
-                async with httpx.AsyncClient(timeout=self.timeout) as client:
-                    response = await client.request(
-                        method,
-                        url,
-                        headers=self._headers(),
-                        **kwargs,
-                    )
+                response = await self._client.request(
+                    method,
+                    url,
+                    headers=self._headers(),
+                    **kwargs,
+                )
             except httpx.HTTPError as exc:
                 if attempt < attempts:
                     await asyncio.sleep(settings.virustotal_retry_backoff_seconds * (2**attempt))
@@ -131,14 +144,16 @@ class VirusTotalService:
     async def get_analysis_report(self, analysis_id: str) -> dict:
         deadline = asyncio.get_running_loop().time() + settings.virustotal_max_poll_seconds
         while True:
-            response = await self._request(
-                "GET",
-                f"{self.base_url}/analyses/{analysis_id}",
-                retry_transient=True,
-            )
             try:
+                response = await self._request(
+                    "GET",
+                    f"{self.base_url}/analyses/{analysis_id}",
+                    retry_transient=True,
+                )
                 report = self._json(response)
-            except VirusTotalError:
+            except VirusTotalError as exc:
+                if exc.status_code not in {502, 504}:
+                    raise
                 if asyncio.get_running_loop().time() >= deadline:
                     raise VirusTotalError(
                         "VirusTotal returned no usable analysis data",
@@ -202,15 +217,12 @@ class VirusTotalService:
         filename: str,
         content_type: str,
     ) -> httpx.Response:
-        try:
-            return await self._request(
-                "POST",
-                upload_url,
-                retry_transient=True,
-                files={"file": (filename, file, content_type)},
-            )
-        except VirusTotalError:
-            raise
+        return await self._request(
+            "POST",
+            upload_url,
+            retry_transient=True,
+            files={"file": (filename, file, content_type)},
+        )
 
 
 def file_size(file: BinaryIO) -> int:

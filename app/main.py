@@ -18,6 +18,7 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 async def lifespan(_: FastAPI):
     await connect_to_mongo()
     yield
+    await virustotal.service.close()
     await close_mongo()
 
 

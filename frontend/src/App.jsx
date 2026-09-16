@@ -20,25 +20,70 @@ async function request(path, options) {
   return body;
 }
 
+function reportAttributes(payload) {
+  const candidates = [
+    payload?.data?.attributes,
+    payload?.attributes,
+    payload?.report?.data?.attributes,
+    payload?.report?.attributes,
+    payload?.report
+  ];
+  return candidates.find((value) => value && typeof value === "object") || {};
+}
+
 function readableReport(report) {
-  const attributes = report?.data?.attributes || report?.attributes || {};
-  const stats = attributes?.last_analysis_stats;
-  if (!stats) {
+  const attributes = reportAttributes(report);
+  const stats =
+    attributes.last_analysis_stats &&
+    typeof attributes.last_analysis_stats === "object"
+      ? attributes.last_analysis_stats
+      : {};
+  const results =
+    attributes.last_analysis_results &&
+    typeof attributes.last_analysis_results === "object"
+      ? attributes.last_analysis_results
+      : attributes.results && typeof attributes.results === "object"
+        ? attributes.results
+        : {};
+  const derivedStats = Object.values(results).reduce((counts, result) => {
+    const category =
+      typeof result?.category === "string"
+        ? result.category.toLowerCase()
+        : "";
+    if (category) {
+      counts[category] = (counts[category] || 0) + 1;
+    }
+    return counts;
+  }, {});
+  if (Object.keys(stats).length === 0 && Object.keys(derivedStats).length === 0) {
     throw new Error("The scan completed without returning analysis results.");
   }
-  const numericStats = Object.fromEntries(
-    Object.entries(stats).map(([key, value]) => [key, Number(value) || 0])
-  );
+  const numericStats = { ...derivedStats };
+  Object.entries(stats).forEach(([key, value]) => {
+    const numericValue = Number(value);
+    if (Number.isFinite(numericValue)) {
+      numericStats[key] = numericValue;
+    }
+  });
+  numericStats.harmless = numericStats.harmless || 0;
+  numericStats.suspicious = numericStats.suspicious || 0;
+  numericStats.malicious = numericStats.malicious || 0;
   const threats = numericStats.malicious + numericStats.suspicious;
   const total = Object.values(numericStats).reduce(
     (sum, value) => sum + (Number(value) || 0),
     0
   );
-  const engineResults = Object.entries(attributes.last_analysis_results || {})
-    .filter(([, result]) => result?.category === "malicious" || result?.category === "suspicious")
+  const engineResults = Object.entries(results)
+    .filter(([, result]) => {
+      const category =
+        typeof result?.category === "string"
+          ? result.category.toLowerCase()
+          : "";
+      return category === "malicious" || category === "suspicious";
+    })
     .map(([engine, result]) => ({
       engine,
-      category: result.category,
+      category: result.category.toLowerCase(),
       result: result.result || "Flagged"
     }));
 
@@ -61,12 +106,27 @@ function readableReport(report) {
 }
 
 async function completedReport(payload) {
-  const attributes = payload?.data?.attributes || payload?.attributes;
-  if (attributes?.last_analysis_stats) {
+  const attributes = reportAttributes(payload);
+  const hasStats =
+    attributes.last_analysis_stats &&
+    typeof attributes.last_analysis_stats === "object" &&
+    Object.keys(attributes.last_analysis_stats).length > 0;
+  const hasResults =
+    [attributes.results, attributes.last_analysis_results].some(
+      (value) =>
+        value &&
+        typeof value === "object" &&
+        Object.keys(value).length > 0
+    );
+  if (hasStats || hasResults) {
     return payload;
   }
 
-  const analysisId = payload?.data?.id || payload?.id;
+  const analysisId =
+    payload?.data?.id ||
+    payload?.id ||
+    payload?.report?.data?.id ||
+    payload?.report?.id;
   if (!analysisId) {
     throw new Error("The scan response did not include a usable analysis report.");
   }
