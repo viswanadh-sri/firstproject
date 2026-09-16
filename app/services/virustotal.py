@@ -1,4 +1,5 @@
-from typing import BinaryIO
+import asyncio
+from typing import Any, BinaryIO
 
 import httpx
 
@@ -24,46 +25,167 @@ class VirusTotalService:
         timeout: float | None = None,
     ):
         configured_key = settings.virustotal_api_key
-        self.api_key = api_key or (configured_key.get_secret_value() if configured_key else None)
+        raw_key = api_key or (configured_key.get_secret_value() if configured_key else None)
+        self.api_key = raw_key.strip() if raw_key else None
         self.base_url = (base_url or settings.virustotal_base_url).rstrip("/")
         self.timeout = timeout or settings.virustotal_timeout_seconds
 
     def _headers(self) -> dict[str, str]:
         if not self.api_key:
-            raise VirusTotalError("VirusTotal API key is not configured", status_code=503)
+            raise VirusTotalError(
+                "VirusTotal API key is not configured. Set VIRUSTOTAL_API_KEY.",
+                status_code=503,
+            )
         return {"x-apikey": self.api_key, "accept": "application/json"}
 
-    async def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
+    @staticmethod
+    def _rewind_file_upload(files: Any) -> None:
+        if not isinstance(files, dict):
+            return
+        for value in files.values():
+            upload = value[1] if isinstance(value, tuple) and len(value) > 1 else None
+            if hasattr(upload, "seek"):
+                upload.seek(0)
+
+    @staticmethod
+    def _analysis_status(payload: dict[str, Any]) -> str | None:
+        data = payload.get("data")
+        attributes = data.get("attributes") if isinstance(data, dict) else None
+        status = attributes.get("status") if isinstance(attributes, dict) else None
+        return status.lower() if isinstance(status, str) else None
+
+    @staticmethod
+    def _analysis_id(payload: dict[str, Any]) -> str:
+        data = payload.get("data")
+        analysis_id = data.get("id") if isinstance(data, dict) else None
+        if not isinstance(analysis_id, str) or not analysis_id:
+            raise VirusTotalError("VirusTotal returned an invalid analysis identifier")
+        return analysis_id
+
+    @staticmethod
+    def _json(response: httpx.Response) -> dict[str, Any]:
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.request(method, url, headers=self._headers(), **kwargs)
-        except httpx.HTTPError as exc:
-            raise VirusTotalError("VirusTotal is unavailable") from exc
-        if response.is_error:
-            raise VirusTotalError(
-                f"VirusTotal request failed with status {response.status_code}",
-                status_code=502,
-            )
-        return response
+            payload = response.json()
+        except ValueError as exc:
+            raise VirusTotalError("VirusTotal returned invalid JSON") from exc
+        if not isinstance(payload, dict) or not payload:
+            raise VirusTotalError("VirusTotal returned an empty response")
+        return payload
+
+    async def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        retry_transient: bool = False,
+        **kwargs,
+    ) -> httpx.Response:
+        attempts = settings.virustotal_retry_attempts if retry_transient else 0
+        for attempt in range(attempts + 1):
+            try:
+                self._rewind_file_upload(kwargs.get("files"))
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.request(
+                        method,
+                        url,
+                        headers=self._headers(),
+                        **kwargs,
+                    )
+            except httpx.HTTPError as exc:
+                if attempt < attempts:
+                    await asyncio.sleep(settings.virustotal_retry_backoff_seconds * (2**attempt))
+                    continue
+                raise VirusTotalError("VirusTotal is unavailable") from exc
+
+            retryable_status = response.status_code == 429 or response.status_code >= 500
+            if response.is_error and retryable_status and attempt < attempts:
+                await asyncio.sleep(settings.virustotal_retry_backoff_seconds * (2**attempt))
+                continue
+            if response.is_error:
+                if response.status_code in {401, 403}:
+                    raise VirusTotalError(
+                        "VirusTotal rejected the API key. Check VIRUSTOTAL_API_KEY.",
+                        status_code=502,
+                    )
+                raise VirusTotalError(
+                    f"VirusTotal request failed with status {response.status_code}",
+                    status_code=502,
+                )
+            return response
+
+        raise VirusTotalError("VirusTotal is unavailable")
 
     async def scan_url(self, url: str) -> dict:
-        response = await self._request("POST", f"{self.base_url}/urls", data={"url": url})
-        return response.json()
+        response = await self._request(
+            "POST",
+            f"{self.base_url}/urls",
+            retry_transient=True,
+            data={"url": url},
+        )
+        return await self.get_analysis_report(self._analysis_id(self._json(response)))
 
     async def get_url_report(self, url_id: str) -> dict:
         response = await self._request("GET", f"{self.base_url}/urls/{url_id}")
-        return response.json()
+        return self._json(response)
+
+    async def get_analysis_report(self, analysis_id: str) -> dict:
+        deadline = asyncio.get_running_loop().time() + settings.virustotal_max_poll_seconds
+        while True:
+            response = await self._request(
+                "GET",
+                f"{self.base_url}/analyses/{analysis_id}",
+                retry_transient=True,
+            )
+            try:
+                report = self._json(response)
+            except VirusTotalError:
+                if asyncio.get_running_loop().time() >= deadline:
+                    raise VirusTotalError(
+                        "VirusTotal returned no usable analysis data",
+                        status_code=502,
+                    ) from None
+                await asyncio.sleep(settings.virustotal_poll_interval_seconds)
+                continue
+            status = self._analysis_status(report)
+
+            if status == "completed":
+                return report
+            if status in {"failed", "interrupted"}:
+                raise VirusTotalError(
+                    f"VirusTotal analysis ended with status '{status}'",
+                    status_code=502,
+                )
+            if status is None and asyncio.get_running_loop().time() >= deadline:
+                raise VirusTotalError(
+                    "VirusTotal returned no usable analysis status",
+                    status_code=502,
+                )
+            if asyncio.get_running_loop().time() >= deadline:
+                raise VirusTotalError(
+                    "VirusTotal analysis did not complete within the allowed time",
+                    status_code=504,
+                )
+            await asyncio.sleep(settings.virustotal_poll_interval_seconds)
 
     async def _large_file_upload_url(self) -> str:
-        response = await self._request("GET", f"{self.base_url}/files/upload_url")
-        upload_url = response.json().get("data")
+        response = await self._request(
+            "GET",
+            f"{self.base_url}/files/upload_url",
+            retry_transient=True,
+        )
+        upload_url = self._json(response).get("data")
         if not isinstance(upload_url, str) or not upload_url.startswith(("https://", "http://")):
             raise VirusTotalError("VirusTotal returned an invalid upload URL")
         return upload_url
 
     async def scan_file(self, file: BinaryIO, filename: str, content_type: str, size: int) -> dict:
+        if not filename.strip():
+            raise VirusTotalError("A filename is required", status_code=400)
+        if size <= 0:
+            raise VirusTotalError("The uploaded file is empty", status_code=400)
         if size > MAX_FILE_SIZE:
             raise VirusTotalError("File exceeds the 650 MB VirusTotal limit", status_code=413)
+        file.seek(0)
 
         upload_url = (
             f"{self.base_url}/files"
@@ -71,7 +193,7 @@ class VirusTotalService:
             else await self._large_file_upload_url()
         )
         response = await self._upload_file(upload_url, file, filename, content_type)
-        return response.json()
+        return await self.get_analysis_report(self._analysis_id(self._json(response)))
 
     async def _upload_file(
         self,
@@ -81,20 +203,14 @@ class VirusTotalService:
         content_type: str,
     ) -> httpx.Response:
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
-                    upload_url,
-                    headers=self._headers(),
-                    files={"file": (filename, file, content_type)},
-                )
-        except httpx.HTTPError as exc:
-            raise VirusTotalError("VirusTotal is unavailable") from exc
-        if response.is_error:
-            raise VirusTotalError(
-                f"VirusTotal file upload failed with status {response.status_code}",
-                status_code=502,
+            return await self._request(
+                "POST",
+                upload_url,
+                retry_transient=True,
+                files={"file": (filename, file, content_type)},
             )
-        return response
+        except VirusTotalError:
+            raise
 
 
 def file_size(file: BinaryIO) -> int:

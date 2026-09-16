@@ -43,8 +43,16 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    token: str = Field(min_length=20, max_length=256)
+    email: EmailStr
+    token: str = Field(min_length=6, max_length=6)
     new_password: str = Field(min_length=12, max_length=128)
+
+    @field_validator("token")
+    @classmethod
+    def validate_otp(cls, value: str) -> str:
+        if not value.isdecimal():
+            raise ValueError("Reset token must be a six-digit OTP")
+        return value
 
     @field_validator("new_password")
     @classmethod

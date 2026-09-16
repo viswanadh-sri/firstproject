@@ -10,7 +10,13 @@
       <h1>Sign in</h1>
       <form id="login-form">
         <label>Email <input name="email" type="email" required autocomplete="email"></label>
-        <label>Password <input name="password" type="password" required autocomplete="current-password"></label>
+        <label>
+          Password
+          <input id="password" name="password" type="password" required autocomplete="current-password">
+          <button id="toggle-password" type="button" aria-controls="password" aria-pressed="false">
+            Show password
+          </button>
+        </label>
         <button type="submit">Sign in</button>
       </form>
       <p><a href="/docs">API documentation</a></p>
@@ -19,6 +25,16 @@
     <script>
       const form = document.getElementById("login-form");
       const message = document.getElementById("message");
+      const password = document.getElementById("password");
+      const togglePassword = document.getElementById("toggle-password");
+
+      togglePassword.addEventListener("click", () => {
+        const isVisible = password.type === "text";
+        password.type = isVisible ? "password" : "text";
+        togglePassword.textContent = isVisible ? "Show password" : "Hide password";
+        togglePassword.setAttribute("aria-pressed", String(!isVisible));
+      });
+
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         const response = await fetch("/auth/login", {

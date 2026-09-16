@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,7 +24,21 @@ class Settings(BaseSettings):
     allowed_origins: str = "http://localhost:8000"
     virustotal_api_key: SecretStr | None = None
     virustotal_base_url: str = "https://www.virustotal.com/api/v3"
-    virustotal_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
+    virustotal_timeout_seconds: float = Field(default=120.0, gt=0, le=300)
+    virustotal_retry_attempts: int = Field(default=3, ge=0, le=10)
+    virustotal_retry_backoff_seconds: float = Field(default=1.0, gt=0, le=30)
+    virustotal_poll_interval_seconds: float = Field(default=2.0, gt=0, le=60)
+    virustotal_max_poll_seconds: float = Field(default=300.0, gt=0, le=600)
+    smtp_host: str = ""
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str = ""
+    smtp_password: SecretStr | None = None
+    smtp_from: str = Field(
+        default="",
+        validation_alias=AliasChoices("SMTP_FROM", "SMTP_FROM_EMAIL"),
+    )
+    smtp_use_tls: bool = True
+    smtp_use_ssl: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

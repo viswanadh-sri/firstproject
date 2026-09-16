@@ -1,17 +1,14 @@
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
-import requests
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
 from pydantic import AnyHttpUrl, BaseModel, field_validator
 
+from app.limiter import limiter
 from app.services.virustotal import VirusTotalError, VirusTotalService, file_size
 
 router = APIRouter(prefix="/virustotal", tags=["VirusTotal"])
 service = VirusTotalService()
-@router.post("/urls", status_code=status.HTTP_200_OK)
-async def scan_url(payload: URLScanRequest):
-    return await _call(lambda: service.scan_url(str(payload.url)))
+
 
 class URLScanRequest(BaseModel):
     url: AnyHttpUrl
@@ -34,16 +31,24 @@ async def _call(operation):
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
+@limiter.limit("10/minute")
 @router.post("/urls", status_code=status.HTTP_200_OK)
-async def scan_url(payload: URLScanRequest):
+async def scan_url(request: Request, payload: URLScanRequest):
     return await _call(lambda: service.scan_url(str(payload.url)))
 
 
 @router.get("/urls/{url_id}/report")
 async def url_report(url_id: str):
     if not url_id or len(url_id) > 512 or "/" in url_id:
-        raise HTTPException(status_code=400, detail="Invalid VirusTotal URL analysis ID")
+        raise HTTPException(status_code=400, detail="Invalid VirusTotal URL ID")
     return await _call(lambda: service.get_url_report(url_id))
+
+
+@router.get("/analyses/{analysis_id}/report")
+async def analysis_report(analysis_id: str):
+    if not analysis_id or len(analysis_id) > 512 or "/" in analysis_id:
+        raise HTTPException(status_code=400, detail="Invalid VirusTotal analysis ID")
+    return await _call(lambda: service.get_analysis_report(analysis_id))
 
 
 @router.post("/files", status_code=status.HTTP_200_OK)

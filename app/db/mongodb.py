@@ -13,6 +13,8 @@ async def connect_to_mongo() -> None:
     await client.admin.command("ping")
     await database.users.create_index("email", unique=True)
     await database.password_reset_tokens.create_index("expires_at", expireAfterSeconds=0)
+    await database.otp_records.create_index("email", unique=True)
+    await database.otp_records.create_index("expires_at", expireAfterSeconds=0)
 
 
 async def close_mongo() -> None:
