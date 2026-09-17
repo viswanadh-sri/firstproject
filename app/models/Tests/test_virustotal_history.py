@@ -8,8 +8,18 @@ from bson import ObjectId
 
 from app.main import app
 from app.routers import auth, virustotal
+from app.services.virustotal import VirusTotalService
 
 pytestmark = pytest.mark.asyncio
+
+
+async def test_virustotal_uses_x_apikey_header():
+    service = VirusTotalService(api_key="test-api-key")
+
+    assert service._headers() == {
+        "x-apikey": "test-api-key",
+        "accept": "application/json",
+    }
 
 
 @pytest_asyncio.fixture
