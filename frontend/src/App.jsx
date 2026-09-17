@@ -13,13 +13,17 @@ function apiUrl(path) {
   return `${apiBaseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
-async function request(path, options) {
+function authorizationHeaders() {
   const token = window.localStorage.getItem("access_token") || window.localStorage.getItem("token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function request(path, options) {
   const response = await fetch(apiUrl(path), {
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...authorizationHeaders(),
       ...(options?.headers ?? {})
     },
     ...options
@@ -331,6 +335,7 @@ function Dashboard({ onSignOut }) {
       const response = await fetch(apiUrl("/virustotal/files"), {
         method: "POST",
         credentials: "include",
+        headers: authorizationHeaders(),
         body: formData
       });
       const body = await response.json().catch(() => ({}));
@@ -550,6 +555,10 @@ function SignIn({ onForgot, onSignedIn }) {
     setState({ busy: true, message: "", error: false });
     try {
       const body = await request("/auth/login", { method: "POST", body: JSON.stringify(form) });
+      if (typeof body.access_token !== "string" || !body.access_token) {
+        throw new Error("Login succeeded without an access token.");
+      }
+      window.localStorage.setItem("access_token", body.access_token);
       setState({ busy: false, message: body.message || "Welcome back.", error: false });
       onSignedIn();
     } catch (error) {
@@ -686,7 +695,15 @@ function ForgotPassword({ onBack }) {
 export default function App() {
   const [view, setView] = useState(views.signIn);
   if (view === views.dashboard) {
-    return <Dashboard onSignOut={() => setView(views.signIn)} />;
+    return (
+      <Dashboard
+        onSignOut={() => {
+          window.localStorage.removeItem("access_token");
+          window.localStorage.removeItem("token");
+          setView(views.signIn);
+        }}
+      />
+    );
   }
   return (
     <AuthShell view={view} onViewChange={setView}>

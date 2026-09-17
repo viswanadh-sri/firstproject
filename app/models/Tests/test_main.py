@@ -167,7 +167,10 @@ async def test_login_sets_authentication_and_csrf_cookies(client: httpx.AsyncCli
     )
 
     assert response.status_code == 200
-    assert response.json() == {"message": "Login successful"}
+    assert response.json() == {
+        "message": "Login successful",
+        "access_token": "access-token",
+    }
     assert client.cookies["access_token"] == "access-token"
     assert client.cookies["csrf_token"] == "csrf-token"
     assert "HttpOnly" in response.headers["set-cookie"]

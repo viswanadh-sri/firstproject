@@ -96,8 +96,9 @@ async def login(request: Request, payload: LoginRequest, response: Response):
     if user is None or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     csrf_token = create_password_reset_token()
-    set_auth_cookies(request, response, create_access_token(str(user["_id"])), csrf_token)
-    return {"message": "Login successful"}
+    access_token = create_access_token(str(user["_id"]))
+    set_auth_cookies(request, response, access_token, csrf_token)
+    return {"message": "Login successful", "access_token": access_token}
 
 
 @router.post("/forgot-password")
