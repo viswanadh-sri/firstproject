@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -20,6 +21,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(default=30, ge=1, le=1440)
     password_reset_expire_minutes: int = Field(default=30, ge=1, le=1440)
     cookie_secure: bool = False
+    cookie_samesite: Literal["lax", "strict", "none"] = "lax"
     cookie_domain: str | None = None
     allowed_origins: str = Field(
         default="http://localhost:5173,http://localhost:8000,https://firstproject-kappa-five.vercel.app",

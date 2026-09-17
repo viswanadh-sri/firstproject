@@ -31,10 +31,14 @@ logger = logging.getLogger(__name__)
 
 def set_auth_cookies(response: Response, access_token: str, csrf_token: str) -> None:
     common = {
-        "secure": settings.cookie_secure,
+        "secure": settings.cookie_secure or settings.environment == "production",
         "domain": settings.cookie_domain,
         "path": "/",
-        "samesite": "lax",
+        "samesite": (
+            "none"
+            if settings.cookie_secure or settings.environment == "production"
+            else settings.cookie_samesite
+        ),
     }
     response.set_cookie("access_token", access_token, httponly=True, max_age=1800, **common)
     response.set_cookie("csrf_token", csrf_token, httponly=False, max_age=1800, **common)
