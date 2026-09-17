@@ -129,17 +129,37 @@ class VirusTotalService:
         raise VirusTotalError("VirusTotal is unavailable")
 
     async def scan_url(self, url: str) -> dict:
+        submission = await self.submit_url(url)
+        return await self.get_analysis_report(self._analysis_id(submission))
+
+    async def submit_url(self, url: str) -> dict:
         response = await self._request(
             "POST",
             f"{self.base_url}/urls",
             retry_transient=True,
             data={"url": url},
         )
-        return await self.get_analysis_report(self._analysis_id(self._json(response)))
+        return self._json(response)
 
     async def get_url_report(self, url_id: str) -> dict:
         response = await self._request("GET", f"{self.base_url}/urls/{url_id}")
         return self._json(response)
+
+    async def get_analysis_report_once(self, analysis_id: str) -> dict[str, Any] | None:
+        response = await self._request(
+            "GET",
+            f"{self.base_url}/analyses/{analysis_id}",
+        )
+        report = self._json(response)
+        status = self._analysis_status(report)
+        if status == "completed":
+            return report
+        if status in {"failed", "interrupted"}:
+            raise VirusTotalError(
+                f"VirusTotal analysis ended with status '{status}'",
+                status_code=502,
+            )
+        return None
 
     async def get_analysis_report(self, analysis_id: str) -> dict:
         deadline = asyncio.get_running_loop().time() + settings.virustotal_max_poll_seconds
@@ -194,6 +214,10 @@ class VirusTotalService:
         return upload_url
 
     async def scan_file(self, file: BinaryIO, filename: str, content_type: str, size: int) -> dict:
+        submission = await self.submit_file(file, filename, content_type, size)
+        return await self.get_analysis_report(self._analysis_id(submission))
+
+    async def submit_file(self, file: BinaryIO, filename: str, content_type: str, size: int) -> dict:
         if not filename.strip():
             raise VirusTotalError("A filename is required", status_code=400)
         if size <= 0:
@@ -208,7 +232,7 @@ class VirusTotalService:
             else await self._large_file_upload_url()
         )
         response = await self._upload_file(upload_url, file, filename, content_type)
-        return await self.get_analysis_report(self._analysis_id(self._json(response)))
+        return self._json(response)
 
     async def _upload_file(
         self,

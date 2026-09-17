@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const views = {
   signIn: "signIn",
@@ -131,7 +131,16 @@ async function completedReport(payload) {
     throw new Error("The scan response did not include a usable analysis report.");
   }
 
-  return request(`/virustotal/analyses/${encodeURIComponent(analysisId)}/report`);
+  const deadline = Date.now() + 600000;
+  while (Date.now() < deadline) {
+    const report = await request(`/virustotal/analyses/${encodeURIComponent(analysisId)}/report`);
+    if (report?.status === "pending") {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      continue;
+    }
+    return report;
+  }
+  throw new Error("VirusTotal analysis did not complete within the allowed time.");
 }
 
 function ScanResult({ result }) {
@@ -178,16 +187,106 @@ function ScanResult({ result }) {
   );
 }
 
+function ThreatReportModal({ report, onClose }) {
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key === "Escape") onClose();
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  if (!report) return null;
+
+  return (
+    <div
+      aria-labelledby="threat-report-title"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      role="dialog"
+    >
+      <section className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl sm:p-8">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-amber-600">Threat report</p>
+            <h2 className="mt-2 text-2xl font-bold text-slate-900" id="threat-report-title">Security issues found</h2>
+            <p className="mt-2 break-all text-sm text-slate-500">{report.target}</p>
+          </div>
+          <button
+            aria-label="Close threat report"
+            className="rounded-xl p-2 text-2xl leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            onClick={onClose}
+            type="button"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            ["Checked", report.total],
+            ["Safe", report.stats?.harmless || 0],
+            ["Suspicious", report.stats?.suspicious || 0],
+            ["Malicious", report.stats?.malicious || 0]
+          ].map(([label, value]) => (
+            <div className="rounded-2xl bg-slate-50 px-3 py-4 text-center" key={label}>
+              <p className="text-xl font-bold text-slate-900">{value}</p>
+              <p className="mt-1 text-xs text-slate-500">{label}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6">
+          <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Services that flagged this item</h3>
+          <ul className="mt-3 space-y-3">
+            {report.engineResults.map((finding) => (
+              <li className="rounded-2xl border border-amber-100 bg-amber-50 p-4" key={`${finding.engine}-${finding.result}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-semibold text-slate-800">{finding.engine}</span>
+                  <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold capitalize text-red-700">{finding.category}</span>
+                </div>
+                <p className="mt-2 text-sm text-slate-600">{finding.result}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <p className="mt-6 rounded-2xl bg-red-50 p-4 text-sm leading-6 text-red-700">
+          Avoid opening or sharing this item until you can verify that these findings are false positives.
+        </p>
+      </section>
+    </div>
+  );
+}
+
 function Dashboard({ onSignOut }) {
   const [url, setUrl] = useState("");
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState("");
   const [result, setResult] = useState(null);
   const [history, setHistory] = useState([]);
+  const [selectedThreatReport, setSelectedThreatReport] = useState(null);
 
-  function addHistory(item) {
-    setHistory((current) => [{ ...item, id: Date.now() }, ...current].slice(0, 8));
-  }
+  const loadHistory = useCallback(async () => {
+    const records = await request("/virustotal/history");
+    setHistory(
+      records.map((record) => ({
+        id: record.id,
+        kind: record.kind,
+        target: record.target,
+        createdAt: record.created_at,
+        ...readableReport(record.report)
+      }))
+    );
+  }, []);
+
+  useEffect(() => {
+    loadHistory().catch(() => setHistory([]));
+  }, [loadHistory]);
 
   async function scanUrl(event) {
     event.preventDefault();
@@ -201,11 +300,10 @@ function Dashboard({ onSignOut }) {
       const report = await completedReport(submission);
       const summary = readableReport(report);
       setResult({ summary });
-      addHistory({ kind: "URL", target: url, ...summary });
+      await loadHistory();
       setUrl("");
     } catch (error) {
       setResult({ error: error.message });
-      addHistory({ kind: "URL", target: url, label: "Scan failed", detail: error.message, error: true });
     } finally {
       setBusy("");
     }
@@ -229,12 +327,11 @@ function Dashboard({ onSignOut }) {
       const report = await completedReport(body);
       const summary = readableReport(report);
       setResult({ summary });
-      addHistory({ kind: "File", target: file.name, ...summary });
+      await loadHistory();
       setFile(null);
       event.target.reset();
     } catch (error) {
       setResult({ error: error.message });
-      addHistory({ kind: "File", target: file.name, label: "Scan failed", detail: error.message, error: true });
     } finally {
       setBusy("");
     }
@@ -315,7 +412,17 @@ function Dashboard({ onSignOut }) {
                   <li className="rounded-2xl border border-slate-100 p-3" key={item.id}>
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-xs font-bold uppercase tracking-wide text-slate-400">{item.kind}</span>
-                      <span className={`text-xs font-semibold ${item.error ? "text-red-600" : item.label === "Needs attention" ? "text-amber-600" : "text-emerald-600"}`}>{item.label}</span>
+                      {item.label === "Needs attention" ? (
+                        <button
+                          className="rounded-lg px-2 py-1 text-xs font-semibold text-amber-600 hover:bg-amber-50"
+                          onClick={() => setSelectedThreatReport(item)}
+                          type="button"
+                        >
+                          {item.label}
+                        </button>
+                      ) : (
+                        <span className={`text-xs font-semibold ${item.error ? "text-red-600" : "text-emerald-600"}`}>{item.label}</span>
+                      )}
                     </div>
                     <p className="mt-2 truncate text-sm font-medium text-slate-700" title={item.target}>{item.target}</p>
                   </li>
@@ -325,6 +432,7 @@ function Dashboard({ onSignOut }) {
           </aside>
         </div>
       </div>
+      <ThreatReportModal report={selectedThreatReport} onClose={() => setSelectedThreatReport(null)} />
     </main>
   );
 }

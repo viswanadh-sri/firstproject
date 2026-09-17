@@ -12,6 +12,7 @@ async def connect_to_mongo() -> None:
     database = client[settings.mongodb_database]
     await client.admin.command("ping")
     await database.users.create_index("email", unique=True)
+    await database.scan_records.create_index([("user_id", 1), ("created_at", -1)])
     await database.password_reset_tokens.create_index("expires_at", expireAfterSeconds=0)
     await database.otp_records.create_index("email", unique=True)
     await database.otp_records.create_index("expires_at", expireAfterSeconds=0)
