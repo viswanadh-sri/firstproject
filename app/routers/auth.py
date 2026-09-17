@@ -29,16 +29,23 @@ bearer = HTTPBearer(auto_error=False)
 logger = logging.getLogger(__name__)
 
 
-def set_auth_cookies(response: Response, access_token: str, csrf_token: str) -> None:
+def set_auth_cookies(
+    request: Request,
+    response: Response,
+    access_token: str,
+    csrf_token: str,
+) -> None:
+    request_origin = request.headers.get("origin", "").strip()
+    cross_origin_https = (
+        request_origin.startswith("https://")
+        and request_origin in settings.cors_origins
+    )
+    secure = settings.cookie_secure or settings.environment == "production" or cross_origin_https
     common = {
-        "secure": settings.cookie_secure or settings.environment == "production",
+        "secure": secure,
         "domain": settings.cookie_domain,
         "path": "/",
-        "samesite": (
-            "none"
-            if settings.cookie_secure or settings.environment == "production"
-            else settings.cookie_samesite
-        ),
+        "samesite": "none" if secure else settings.cookie_samesite,
     }
     response.set_cookie("access_token", access_token, httponly=True, max_age=1800, **common)
     response.set_cookie("csrf_token", csrf_token, httponly=False, max_age=1800, **common)
@@ -84,12 +91,12 @@ async def register(payload: UserCreate):
 
 
 @router.post("/login")
-async def login(payload: LoginRequest, response: Response):
+async def login(request: Request, payload: LoginRequest, response: Response):
     user = await get_database().users.find_one({"email": str(payload.email).lower()})
     if user is None or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     csrf_token = create_password_reset_token()
-    set_auth_cookies(response, create_access_token(str(user["_id"])), csrf_token)
+    set_auth_cookies(request, response, create_access_token(str(user["_id"])), csrf_token)
     return {"message": "Login successful"}
 
 
