@@ -14,9 +14,14 @@ function apiUrl(path) {
 }
 
 async function request(path, options) {
+  const token = window.localStorage.getItem("access_token") || window.localStorage.getItem("token");
   const response = await fetch(apiUrl(path), {
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options?.headers ?? {})
+    },
     ...options
   });
   const body = await response.json().catch(() => ({}));
