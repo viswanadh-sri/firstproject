@@ -439,9 +439,9 @@ function Dashboard({ onSignOut }) {
 
 function AuthShell({ children, view, onViewChange }) {
   return (
-    <main className="min-h-screen w-full max-w-none bg-slate-950 px-4 py-10 text-slate-100 sm:px-6">
+    <main className="min-h-screen w-full bg-slate-950 px-4 py-10 text-slate-100 sm:px-6">
       <div className="flex min-h-[calc(100vh-5rem)] w-full min-w-0 items-center justify-center">
-        <section className="grid w-full overflow-hidden rounded-3xl border border-white/10 bg-white shadow-2xl shadow-black/30 lg:grid-cols-[0.9fr_1.1fr]">
+        <section className="grid min-h-[605px] w-full max-w-none overflow-hidden rounded-3xl border border-white/10 bg-white shadow-2xl shadow-black/30 lg:grid-cols-2">
           <div className="hidden bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 p-12 lg:flex lg:flex-col lg:justify-between">
             <div>
               <div className="mb-12 flex items-center gap-3 text-lg font-semibold">
