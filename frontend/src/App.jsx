@@ -7,9 +7,15 @@ const views = {
   dashboard: "dashboard"
 };
 
+const apiBaseUrl = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+
+function apiUrl(path) {
+  return `${apiBaseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 async function request(path, options) {
-  const response = await fetch(path, {
-    credentials: "same-origin",
+  const response = await fetch(apiUrl(path), {
+    credentials: "include",
     headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) },
     ...options
   });
@@ -317,9 +323,9 @@ function Dashboard({ onSignOut }) {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const response = await fetch("/virustotal/files", {
+      const response = await fetch(apiUrl("/virustotal/files"), {
         method: "POST",
-        credentials: "same-origin",
+        credentials: "include",
         body: formData
       });
       const body = await response.json().catch(() => ({}));

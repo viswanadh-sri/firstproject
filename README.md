@@ -5,7 +5,7 @@
 1. Create and activate a virtual environment.
 2. Install dependencies: `pip install -r requirements.txt`.
 3. Copy `.env.example` to `.env` and set the MongoDB Atlas URI and a random JWT secret of at least 32 characters.
-4. Start the app: `uvicorn Main:app --reload`.
+4. Start the app: `uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`.
 5. Open `http://localhost:8000/` for the login page.
 
 ## Security notes
@@ -31,4 +31,4 @@ npm install
 npm run dev
 ```
 
-The Vite development server proxies `/auth` requests to the FastAPI server at `http://localhost:8000`. The forgot-password screen follows the current backend contract: it requests reset instructions and then submits the reset token with the new password.
+The Vite development server proxies `/auth` and `/virustotal` requests to the FastAPI server at `http://localhost:8000`. Set `VITE_API_URL` to the deployed FastAPI origin for production builds (for example, `https://your-service.onrender.com`), without adding `/api` unless the backend explicitly mounts that prefix. The forgot-password screen follows the current backend contract: it requests reset instructions and then submits the reset token with the new password.

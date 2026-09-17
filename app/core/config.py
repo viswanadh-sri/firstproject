@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     password_reset_expire_minutes: int = Field(default=30, ge=1, le=1440)
     cookie_secure: bool = False
     cookie_domain: str | None = None
-    allowed_origins: str = "http://localhost:8000"
+    allowed_origins: str = "http://localhost:5173,http://localhost:8000"
     virustotal_api_key: SecretStr | None = None
     virustotal_base_url: str = "https://www.virustotal.com/api/v3"
     virustotal_timeout_seconds: float = Field(default=120.0, gt=0, le=300)
