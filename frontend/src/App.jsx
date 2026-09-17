@@ -339,7 +339,7 @@ function Dashboard({ onSignOut }) {
 
   return (
     <main className="min-h-screen w-full max-w-none bg-slate-950 px-4 py-8 text-slate-900 sm:px-6">
-      <div className="w-full min-w-0">
+      <div className="mx-auto w-full min-w-0 max-w-7xl">
         <header className="mb-8 flex flex-wrap items-center justify-between gap-4 text-white">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-indigo-300">Secure Auth</p>
@@ -441,7 +441,7 @@ function AuthShell({ children, view, onViewChange }) {
   return (
     <main className="min-h-screen w-full bg-slate-950 px-4 py-10 text-slate-100 sm:px-6">
       <div className="flex min-h-[calc(100vh-5rem)] w-full min-w-0 items-center justify-center">
-        <section className="grid min-h-[605px] w-full max-w-none overflow-hidden rounded-3xl border border-white/10 bg-white shadow-2xl shadow-black/30 lg:grid-cols-2">
+        <section className="grid w-full max-w-6xl overflow-hidden rounded-3xl border border-white/10 bg-white shadow-2xl shadow-black/30 lg:min-h-[605px] lg:grid-cols-2">
           <div className="hidden bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 p-12 lg:flex lg:flex-col lg:justify-between">
             <div>
               <div className="mb-12 flex items-center gap-3 text-lg font-semibold">
