@@ -209,7 +209,7 @@ function ThreatReportModal({ report, onClose }) {
       }}
       role="dialog"
     >
-      <section className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl sm:p-8">
+      <section className="max-h-[90vh] w-full  overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl sm:p-8">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.16em] text-amber-600">Threat report</p>
