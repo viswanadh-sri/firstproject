@@ -13,9 +13,9 @@ from app.routers.virustotal import virustotal_bp, service
 
 load_dotenv()
 def create_app() -> Flask:
-    swagger = Swagger(app)
     
     app = Flask(__name__, template_folder=str(Path(__file__).parent / "templates"))
+    swagger = Swagger(app)
     app.config["SECRET_KEY"] = settings.jwt_secret_key.get_secret_value()
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SECURE"] = settings.cookie_secure or settings.environment == "production"
