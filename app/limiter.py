@@ -1,4 +1,13 @@
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+"""Compatibility placeholder for the former FastAPI rate-limit integration."""
 
-limiter = Limiter(key_func=get_remote_address)
+
+class _NoOpLimiter:
+    def limit(self, *args, **kwargs):
+        del args, kwargs
+        def decorator(function):
+            return function
+
+        return decorator
+
+
+limiter = _NoOpLimiter()

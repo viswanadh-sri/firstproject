@@ -1,35 +1,30 @@
 import smtplib
 
-from fastapi import APIRouter, HTTPException, status
+from flask import Blueprint, jsonify
+from werkzeug.exceptions import BadRequest, ServiceUnavailable
 
-from app.models.otp import OTPRequest, OTPVerifyRequest
 from app.services.otp import create_and_send_otp, verify_otp
+from app.routers.auth import _email, _json_payload
 
-router = APIRouter(prefix="/otp", tags=["OTP"])
+otp_bp = Blueprint("otp", __name__, url_prefix="/otp")
 
 
-@router.post("/request", status_code=status.HTTP_202_ACCEPTED)
-async def request_otp(payload: OTPRequest):
+@otp_bp.post("/request")
+def request_otp():
+    email = _email(_json_payload(("email",))["email"])
     try:
-        await create_and_send_otp(str(payload.email))
+        create_and_send_otp(email)
     except RuntimeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="OTP email service is not configured",
-        ) from exc
+        raise ServiceUnavailable("OTP email service is not configured") from exc
     except (OSError, smtplib.SMTPException) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Unable to send OTP email",
-        ) from exc
-    return {"message": "OTP sent if the email address is eligible"}
+        raise BadRequest("Unable to send OTP email") from exc
+    return jsonify(message="OTP sent if the email address is eligible"), 202
 
 
-@router.post("/verify")
-async def verify_submitted_otp(payload: OTPVerifyRequest):
-    if await verify_otp(str(payload.email), payload.otp):
-        return {"message": "OTP verified successfully"}
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Invalid or expired OTP",
-    )
+@otp_bp.post("/verify")
+def verify_submitted_otp():
+    payload = _json_payload(("email", "otp"))
+    email = _email(payload["email"])
+    if verify_otp(email, payload["otp"]):
+        return jsonify(message="OTP verified successfully")
+    raise BadRequest("Invalid or expired OTP")

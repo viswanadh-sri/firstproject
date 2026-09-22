@@ -6,13 +6,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "Secure FastAPI Auth"
+    app_name: str = "Secure Flask Auth"
     environment: str = "development"
     mongodb_uri: SecretStr = Field(
         default=SecretStr("mongodb://localhost:27017"),
         description="MongoDB Atlas connection string",
     )
-    mongodb_database: str = "fastapi_auth"
+    mongodb_database: str = "flask_auth"
     jwt_secret_key: SecretStr = Field(
         default=SecretStr("change-this-development-secret-key"),
         min_length=32,

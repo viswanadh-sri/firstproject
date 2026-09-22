@@ -1,134 +1,95 @@
 from urllib.parse import urlsplit
-
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
-from fastapi.responses import JSONResponse
-from pydantic import AnyHttpUrl, BaseModel, field_validator
+from flask import Blueprint, jsonify, request
 from pymongo.errors import PyMongoError
+from werkzeug.exceptions import BadRequest, InternalServerError
 
 from app.db.mongodb import get_database
-from app.limiter import limiter
 from app.routers.auth import current_user
 from app.services.virustotal import VirusTotalError, VirusTotalService, file_size
 
-router = APIRouter(prefix="/virustotal", tags=["VirusTotal"])
+virustotal_bp = Blueprint("virustotal", __name__, url_prefix="/virustotal")
 service = VirusTotalService()
 
 
-class URLScanRequest(BaseModel):
-    url: AnyHttpUrl
-
-    @field_validator("url")
-    @classmethod
-    def require_public_http_url(cls, value: AnyHttpUrl) -> AnyHttpUrl:
-        parsed = urlsplit(str(value))
-        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-            raise ValueError("Only valid HTTP(S) URLs are supported")
-        if parsed.username or parsed.password:
-            raise ValueError("URLs with embedded credentials are not supported")
-        return value
-
-
-async def _call(operation):
+def _call(operation):
     try:
-        return await operation()
+        return operation()
     except VirusTotalError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        error = BadRequest(str(exc)) if exc.status_code == 400 else InternalServerError(str(exc))
+        error.code = exc.status_code
+        raise error from exc
 
 
-async def _save_submission(user: dict, kind: str, target: str, submission: dict) -> None:
-    analysis_id = service._analysis_id(submission)
+def _save_submission(user: dict, kind: str, target: str, submission: dict) -> None:
     try:
-        await get_database().scan_records.insert_one(
-            {
-                "user_id": user["_id"],
-                "analysis_id": analysis_id,
-                "kind": kind,
-                "target": target,
-                "created_at": datetime.now(UTC),
-            }
-        )
+        get_database().scan_records.insert_one({"user_id": user["_id"], "analysis_id": service._analysis_id(submission),
+                                                "kind": kind, "target": target, "created_at": datetime.now(UTC)})
     except PyMongoError as exc:
-        raise HTTPException(status_code=500, detail="The scan was submitted but could not be saved.") from exc
+        raise InternalServerError("The scan was submitted but could not be saved.") from exc
 
 
-async def _attach_report(user: dict, analysis_id: str, report: dict) -> None:
+def _attach_report(user: dict, analysis_id: str, report: dict) -> None:
     try:
-        await get_database().scan_records.update_one(
-            {"user_id": user["_id"], "analysis_id": analysis_id},
-            {"$set": {"report": report, "completed_at": datetime.now(UTC)}},
-        )
+        get_database().scan_records.update_one({"user_id": user["_id"], "analysis_id": analysis_id},
+                                               {"$set": {"report": report, "completed_at": datetime.now(UTC)}})
     except PyMongoError as exc:
-        raise HTTPException(status_code=500, detail="The scan completed but could not be updated.") from exc
+        raise InternalServerError("The scan completed but could not be updated.") from exc
 
 
-@limiter.limit("10/minute")
-@router.post("/urls", status_code=status.HTTP_200_OK)
-async def scan_url(request: Request, payload: URLScanRequest, user=Depends(current_user)):
-    target = str(payload.url)
-    submission = await _call(lambda: service.submit_url(target))
-    await _save_submission(user, "URL", target, submission)
-    return submission
+@virustotal_bp.post("/urls")
+def scan_url():
+    user = current_user()
+    payload = request.get_json(silent=True)
+    target = payload.get("url") if isinstance(payload, dict) else None
+    parsed = urlsplit(target) if isinstance(target, str) else None
+    if not parsed or parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+        raise BadRequest("Only valid HTTP(S) URLs without embedded credentials are supported")
+    target = target.strip()
+    if not target:
+        raise BadRequest("URL is required")
+    submission = _call(lambda: service.submit_url(target))
+    _save_submission(user, "URL", target, submission)
+    return jsonify(submission)
 
 
-@router.get("/history")
-async def scan_history(user=Depends(current_user)):
-    records = (
-        get_database()
-        .scan_records
-        .find({"user_id": user["_id"]})
-        .sort("created_at", -1)
-        .limit(50)
-    )
-    return [
-        {
-            "id": str(record["_id"]),
-            "kind": record["kind"],
-            "target": record["target"],
-            "report": record["report"],
-            "created_at": record["created_at"],
-        }
-        async for record in records if record.get("report")
-    ]
+@virustotal_bp.get("/history")
+def scan_history():
+    user = current_user()
+    records = get_database().scan_records.find({"user_id": user["_id"]}).sort("created_at", -1).limit(50)
+    return jsonify([{"id": str(record["_id"]), "kind": record["kind"], "target": record["target"],
+                    "report": record["report"], "created_at": record["created_at"]} for record in records if record.get("report")])
 
 
-@router.get("/urls/{url_id}/report")
-async def url_report(url_id: str, user=Depends(current_user)):
+@virustotal_bp.get("/urls/<url_id>/report")
+def url_report(url_id: str):
+    current_user()
     if not url_id or len(url_id) > 512 or "/" in url_id:
-        raise HTTPException(status_code=400, detail="Invalid VirusTotal URL ID")
-    return await _call(lambda: service.get_url_report(url_id))
+        raise BadRequest("Invalid VirusTotal URL ID")
+    return jsonify(_call(lambda: service.get_url_report(url_id)))
 
 
-@router.get("/analyses/{analysis_id}/report")
-async def analysis_report(analysis_id: str, user=Depends(current_user)):
+@virustotal_bp.get("/analyses/<analysis_id>/report")
+def analysis_report(analysis_id: str):
+    user = current_user()
     if not analysis_id or len(analysis_id) > 512 or "/" in analysis_id:
-        raise HTTPException(status_code=400, detail="Invalid VirusTotal analysis ID")
-    report = await _call(lambda: service.get_analysis_report_once(analysis_id))
+        raise BadRequest("Invalid VirusTotal analysis ID")
+    report = _call(lambda: service.get_analysis_report_once(analysis_id))
     if report is None:
-        return JSONResponse(
-            status_code=status.HTTP_202_ACCEPTED,
-            content={"status": "pending", "analysis_id": analysis_id},
-        )
-    await _attach_report(user, analysis_id, report)
-    return report
+        return jsonify(status="pending", analysis_id=analysis_id), 202
+    _attach_report(user, analysis_id, report)
+    return jsonify(report)
 
 
-@router.post("/files", status_code=status.HTTP_200_OK)
-async def scan_file(file: UploadFile = File(...), user=Depends(current_user)):
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="A filename is required")
-    size = file_size(file.file)
-    try:
-        submission = await _call(
-            lambda: service.submit_file(
-                file.file,
-                file.filename,
-                file.content_type or "application/octet-stream",
-                size,
-            )
-        )
-        await _save_submission(user, "File", file.filename, submission)
-        return submission
-    finally:
-        await file.close()
+@virustotal_bp.post("/files")
+def scan_file():
+    user = current_user()
+    uploaded = request.files.get("file")
+    if uploaded is None or not uploaded.filename:
+        raise BadRequest("A filename is required")
+    size = file_size(uploaded.stream)
+    submission = _call(lambda: service.submit_file(uploaded.stream, uploaded.filename,
+                                                   uploaded.content_type or "application/octet-stream", size))
+    _save_submission(user, "File", uploaded.filename, submission)
+    return jsonify(submission)

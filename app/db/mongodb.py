@@ -1,29 +1,29 @@
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from pymongo import MongoClient
 
 from app.core.config import settings
 
-client: AsyncIOMotorClient | None = None
-database: AsyncIOMotorDatabase | None = None
+client: MongoClient | None = None
+database = None
 
 
-async def connect_to_mongo() -> None:
+def connect_to_mongo() -> None:
     global client, database
-    client = AsyncIOMotorClient(settings.mongodb_uri.get_secret_value())
+    client = MongoClient(settings.mongodb_uri.get_secret_value())
     database = client[settings.mongodb_database]
-    await client.admin.command("ping")
-    await database.users.create_index("email", unique=True)
-    await database.scan_records.create_index([("user_id", 1), ("created_at", -1)])
-    await database.password_reset_tokens.create_index("expires_at", expireAfterSeconds=0)
-    await database.otp_records.create_index("email", unique=True)
-    await database.otp_records.create_index("expires_at", expireAfterSeconds=0)
+    client.admin.command("ping")
+    database.users.create_index("email", unique=True)
+    database.scan_records.create_index([("user_id", 1), ("created_at", -1)])
+    database.password_reset_tokens.create_index("expires_at", expireAfterSeconds=0)
+    database.otp_records.create_index("email", unique=True)
+    database.otp_records.create_index("expires_at", expireAfterSeconds=0)
 
 
-async def close_mongo() -> None:
+def close_mongo() -> None:
     if client is not None:
         client.close()
 
 
-def get_database() -> AsyncIOMotorDatabase:
+def get_database():
     if database is None:
         raise RuntimeError("MongoDB has not been initialized")
     return database
