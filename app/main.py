@@ -1,3 +1,4 @@
+from dotenv import load_dotenv
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template
@@ -9,7 +10,7 @@ from app.routers.auth import auth_bp
 from app.routers.otp import otp_bp
 from app.routers.virustotal import virustotal_bp, service
 
-
+load_dotenv()
 def create_app() -> Flask:
     app = Flask(__name__, template_folder=str(Path(__file__).parent / "templates"))
     app.config["SECRET_KEY"] = settings.jwt_secret_key.get_secret_value()
