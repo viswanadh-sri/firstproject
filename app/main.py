@@ -29,19 +29,13 @@ def create_app() -> Flask:
 
     @app.get("/")
     def root():
-
-        '''
-        root endpoint
+        """
+        Root endpoint.
         ---
-
-            responses:
-
-
-            200:
-
-            
-            description: returns hello world message
-            ''' 
+        responses:
+          200:
+            description: Returns hello world message
+        """
         return jsonify(message="Hello World")
 
     @app.get("/login")
