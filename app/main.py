@@ -30,7 +30,8 @@ def create_app() -> Flask:
     @app.get("/")
     def root():
         '''root endpoint
-            response:
+        ---
+            responses:
             200:
             description: returns hello world message
             ''' 
