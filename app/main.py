@@ -12,6 +12,12 @@ from app.routers.otp import otp_bp
 from app.routers.virustotal import virustotal_bp, service
 
 load_dotenv()
+
+
+def initialize_app() -> None:
+    connect_to_mongo()
+
+
 def create_app() -> Flask:
     
     app = Flask(__name__, template_folder=str(Path(__file__).parent / "templates"))
@@ -26,6 +32,7 @@ def create_app() -> Flask:
     app.register_blueprint(auth_bp)
     app.register_blueprint(otp_bp)
     app.register_blueprint(virustotal_bp)
+    initialize_app()
 
     @app.get("/")
     def root():
@@ -63,10 +70,6 @@ def create_app() -> Flask:
 
 
 app = create_app()
-
-
-def initialize_app() -> None:
-    connect_to_mongo()
 
 
 def shutdown_app() -> None:
