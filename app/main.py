@@ -13,6 +13,11 @@ from app.routers.virustotal import virustotal_bp, service
 
 load_dotenv()
 def create_app() -> Flask:
+    '''root endpoint
+    response:
+    200:
+    description: returns hello world message
+    '''
     
     app = Flask(__name__, template_folder=str(Path(__file__).parent / "templates"))
     swagger = Swagger(app)
