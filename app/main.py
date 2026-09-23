@@ -1,5 +1,8 @@
-from flasgger import Swagger
 from dotenv import load_dotenv
+
+load_dotenv()
+
+from flasgger import Swagger
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template
@@ -10,8 +13,6 @@ from app.db.mongodb import close_mongo, connect_to_mongo
 from app.routers.auth import auth_bp
 from app.routers.otp import otp_bp
 from app.routers.virustotal import virustotal_bp, service
-
-load_dotenv()
 
 
 def initialize_app() -> None:

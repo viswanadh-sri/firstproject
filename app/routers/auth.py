@@ -60,7 +60,11 @@ def _cookie_options() -> dict:
     return {
         "max_age": COOKIE_MAX_AGE,
         "httponly": True,
-        "secure": settings.cookie_secure or settings.environment == "production",
+        "secure": (
+            settings.cookie_secure
+            or settings.environment == "production"
+            or settings.cookie_samesite == "none"
+        ),
         "samesite": settings.cookie_samesite,
         "domain": settings.cookie_domain,
         "path": "/",
@@ -169,7 +173,11 @@ def logout():
     delete_options = {
         "path": "/",
         "domain": settings.cookie_domain,
-        "secure": settings.cookie_secure or settings.environment == "production",
+        "secure": (
+            settings.cookie_secure
+            or settings.environment == "production"
+            or settings.cookie_samesite == "none"
+        ),
         "samesite": settings.cookie_samesite,
     }
     response.delete_cookie(AUTH_COOKIE, **delete_options)

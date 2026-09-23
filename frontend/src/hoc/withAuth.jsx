@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 
+const apiBaseUrl = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+
 export default function withAuth(
   Component,
   {
     redirectTo = "/login",
-    apiUrl = "/auth/me",
+    apiPath = "/auth/me",
     loadingFallback = null
   } = {}
 ) {
@@ -12,13 +14,13 @@ export default function withAuth(
     const [isAuthorized, setIsAuthorized] = useState(null);
 
     useEffect(() => {
-      fetch(apiUrl, { credentials: "include" })
+      fetch(`${apiBaseUrl}${apiPath}`, { credentials: "include" })
         .then((response) => {
           if (!response.ok) throw new Error("Not authenticated");
           setIsAuthorized(true);
         })
         .catch(() => setIsAuthorized(false));
-    }, [apiUrl]);
+    }, [apiPath]);
 
     useEffect(() => {
       if (isAuthorized === false) {
