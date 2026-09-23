@@ -1,31 +1,10 @@
 import { useEffect, useState } from "react";
 
-const DEFAULT_COOKIE_NAMES = ["access_token", "token"];
-const DEFAULT_STORAGE_KEYS = ["access_token", "token"];
-
-function hasCookie(name) {
-  return document.cookie.split(";").some((cookie) => {
-    const [cookieName, ...cookieValue] = cookie.trim().split("=");
-    return cookieName === name && cookieValue.join("=") !== "";
-  });
-}
-
-function hasStoredToken(key) {
-  return Boolean(window.localStorage.getItem(key));
-}
-
-function hasAuthToken(cookieNames, storageKeys) {
-  const cookieToken = cookieNames.some(hasCookie);
-  const storageToken = storageKeys.some(hasStoredToken);
-  return cookieToken || storageToken;
-}
-
 export default function withAuth(
   Component,
   {
     redirectTo = "/login",
-    cookieNames = DEFAULT_COOKIE_NAMES,
-    storageKeys = DEFAULT_STORAGE_KEYS,
+    apiUrl = "/auth/me",
     loadingFallback = null
   } = {}
 ) {
@@ -33,8 +12,13 @@ export default function withAuth(
     const [isAuthorized, setIsAuthorized] = useState(null);
 
     useEffect(() => {
-      setIsAuthorized(hasAuthToken(cookieNames, storageKeys));
-    }, []);
+      fetch(apiUrl, { credentials: "include" })
+        .then((response) => {
+          if (!response.ok) throw new Error("Not authenticated");
+          setIsAuthorized(true);
+        })
+        .catch(() => setIsAuthorized(false));
+    }, [apiUrl]);
 
     useEffect(() => {
       if (isAuthorized === false) {

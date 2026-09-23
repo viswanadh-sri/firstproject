@@ -13,9 +13,12 @@ function apiUrl(path) {
   return `${apiBaseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
-function authorizationHeaders() {
-  const token = window.localStorage.getItem("access_token") || window.localStorage.getItem("token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
+function csrfHeaders() {
+  const csrfCookie = document.cookie
+    .split("; ")
+    .find((cookie) => cookie.startsWith("csrf_token="));
+  if (!csrfCookie) return {};
+  return { "X-CSRF-Token": decodeURIComponent(csrfCookie.slice("csrf_token=".length)) };
 }
 
 async function request(path, options) {
@@ -23,7 +26,7 @@ async function request(path, options) {
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...authorizationHeaders(),
+      ...(["GET", "HEAD", "OPTIONS"].includes((options?.method || "GET").toUpperCase()) ? {} : csrfHeaders()),
       ...(options?.headers ?? {})
     },
     ...options
@@ -335,7 +338,7 @@ function Dashboard({ onSignOut }) {
       const response = await fetch(apiUrl("/virustotal/files"), {
         method: "POST",
         credentials: "include",
-        headers: authorizationHeaders(),
+        headers: csrfHeaders(),
         body: formData
       });
       const body = await response.json().catch(() => ({}));
@@ -555,10 +558,6 @@ function SignIn({ onForgot, onSignedIn }) {
     setState({ busy: true, message: "", error: false });
     try {
       const body = await request("/auth/login", { method: "POST", body: JSON.stringify(form) });
-      if (typeof body.access_token !== "string" || !body.access_token) {
-        throw new Error("Login succeeded without an access token.");
-      }
-      window.localStorage.setItem("access_token", body.access_token);
       setState({ busy: false, message: body.message || "Welcome back.", error: false });
       onSignedIn();
     } catch (error) {
@@ -693,14 +692,26 @@ function ForgotPassword({ onBack }) {
 }
 
 export default function App() {
-  const [view, setView] = useState(views.signIn);
+  const [view, setView] = useState(null);
+
+  useEffect(() => {
+    request("/auth/me")
+      .then(() => setView(views.dashboard))
+      .catch(() => setView(views.signIn));
+  }, []);
+
+  if (view === null) {
+    return <div className="min-h-screen bg-slate-950" />;
+  }
   if (view === views.dashboard) {
     return (
       <Dashboard
-        onSignOut={() => {
-          window.localStorage.removeItem("access_token");
-          window.localStorage.removeItem("token");
-          setView(views.signIn);
+        onSignOut={async () => {
+          try {
+            await request("/auth/logout", { method: "POST" });
+          } finally {
+            setView(views.signIn);
+          }
         }}
       />
     );

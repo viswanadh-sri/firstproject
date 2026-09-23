@@ -2,15 +2,15 @@ import logging
 import re
 import smtplib
 from datetime import UTC, datetime
+from secrets import compare_digest, token_urlsafe
 
 from bson import ObjectId
-from flask import Blueprint, jsonify, request, session
-from werkzeug.exceptions import BadRequest, Conflict, Unauthorized
+from flask import Blueprint, jsonify, request
+from werkzeug.exceptions import BadRequest, Conflict, Forbidden, Unauthorized
 
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
-    create_password_reset_token,
     decode_access_token,
     hash_password,
     verify_password,
@@ -22,6 +22,9 @@ auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 logger = logging.getLogger(__name__)
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9 _.-]+$")
+AUTH_COOKIE = "access_token"
+CSRF_COOKIE = "csrf_token"
+COOKIE_MAX_AGE = settings.access_token_expire_minutes * 60
 
 
 def _json_payload(required: tuple[str, ...]) -> dict:
@@ -53,23 +56,47 @@ def _user_response(user_id, email: str, display_name: str) -> dict:
     return {"id": str(user_id), "email": email, "display_name": display_name}
 
 
+def _cookie_options() -> dict:
+    return {
+        "max_age": COOKIE_MAX_AGE,
+        "httponly": True,
+        "secure": settings.cookie_secure or settings.environment == "production",
+        "samesite": settings.cookie_samesite,
+        "domain": settings.cookie_domain,
+        "path": "/",
+    }
+
+
+def _set_auth_cookies(response, access_token: str):
+    response.set_cookie(AUTH_COOKIE, access_token, **_cookie_options())
+    response.set_cookie(
+        CSRF_COOKIE,
+        token_urlsafe(32),
+        **{**_cookie_options(), "httponly": False},
+    )
+    return response
+
+
+def _require_csrf() -> None:
+    cookie_token = request.cookies.get(CSRF_COOKIE, "")
+    header_token = request.headers.get("X-CSRF-Token", "")
+    if not cookie_token or not header_token or not compare_digest(cookie_token, header_token):
+        raise Forbidden("CSRF validation failed")
+
+
 def current_user():
-    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-    user_id = session.get("user_id")
-    if not user_id:
-        token = token or request.cookies.get("access_token")
-        if not token:
-            raise Unauthorized("Authentication required")
-        try:
-            user_id = decode_access_token(token)
-        except ValueError as exc:
-            raise Unauthorized(str(exc)) from exc
+    token = request.cookies.get(AUTH_COOKIE)
+    if not token:
+        raise Unauthorized("Authentication required")
+    try:
+        user_id = decode_access_token(token)
+    except ValueError as exc:
+        raise Unauthorized(str(exc)) from exc
     try:
         user = get_database().users.find_one({"_id": ObjectId(str(user_id))})
     except Exception as exc:
         raise Unauthorized("Authentication required") from exc
     if user is None:
-        session.clear()
         raise Unauthorized("User not found")
     return user
 
@@ -101,13 +128,8 @@ def login():
     user = get_database().users.find_one({"email": email})
     if user is None or not verify_password(password, user["password_hash"]):
         raise Unauthorized("Invalid email or password")
-    session.permanent = True
-    session["user_id"] = str(user["_id"])
     access_token = create_access_token(str(user["_id"]))
-    response = jsonify(message="Login successful", access_token=access_token)
-    response.set_cookie("access_token", access_token, httponly=True, max_age=1800, path="/")
-    response.set_cookie("csrf_token", create_password_reset_token(), httponly=False, max_age=1800, path="/")
-    return response
+    return _set_auth_cookies(jsonify(message="Login successful"), access_token)
 
 
 @auth_bp.post("/forgot-password")
@@ -142,10 +164,16 @@ def reset_password():
 
 @auth_bp.post("/logout")
 def logout():
-    session.clear()
+    _require_csrf()
     response = jsonify(message="Logged out")
-    response.delete_cookie("access_token", path="/")
-    response.delete_cookie("csrf_token", path="/")
+    delete_options = {
+        "path": "/",
+        "domain": settings.cookie_domain,
+        "secure": settings.cookie_secure or settings.environment == "production",
+        "samesite": settings.cookie_samesite,
+    }
+    response.delete_cookie(AUTH_COOKIE, **delete_options)
+    response.delete_cookie(CSRF_COOKIE, **delete_options)
     return response
 
 
